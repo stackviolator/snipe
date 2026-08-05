@@ -14,10 +14,24 @@ Fast, native screenshot tool for macOS. Capture, annotate, copy — all inline. 
 
 ## Install
 
-### Homebrew
+### Homebrew — prebuilt app (recommended)
+
+The cask lives in this repo (`Casks/snipe.rb`) and installs the signed prebuilt app:
 
 ```bash
-brew tap stackviolator/snipe
+brew tap stackviolator/snipe https://github.com/stackviolator/snipe.git
+brew install --cask snipe
+```
+
+> The shorthand `brew tap stackviolator/snipe` also works and pulls the same
+> cask from the legacy `homebrew-snipe` tap repo.
+
+### Homebrew — build from source
+
+A formula is included in `Formula/snipe.rb` (requires Xcode):
+
+```bash
+brew tap stackviolator/snipe https://github.com/stackviolator/snipe.git
 brew install snipe
 ```
 
