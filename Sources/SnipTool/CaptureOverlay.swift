@@ -1,9 +1,16 @@
 import AppKit
 
+// Borderless windows return false for canBecomeKey by default,
+// which silently drops ALL keyboard events. This fixes that.
+class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 // MARK: - Capture coordinator
 
 class CaptureOverlay {
-    private var windows: [NSWindow] = []
+    private var windows: [KeyableWindow] = []
     private let onCapture: (NSImage) -> Void
 
     init(onCapture: @escaping (NSImage) -> Void) {
@@ -11,25 +18,45 @@ class CaptureOverlay {
     }
 
     func show() {
-        for screen in NSScreen.screens {
-            let window = NSWindow(contentRect: screen.frame,
-                                  styleMask: .borderless,
-                                  backing: .buffered,
-                                  defer: false,
-                                  screen: screen)
+        let screens = NSScreen.screens
+        let maxY = screens.map { $0.frame.maxY }.max() ?? 0
+
+        for screen in screens {
+            // Pre-capture the screen BEFORE showing the overlay
+            let cgRect = CGRect(x: screen.frame.origin.x,
+                                y: maxY - screen.frame.maxY,
+                                width: screen.frame.width,
+                                height: screen.frame.height)
+
+            guard let cgImage = CGWindowListCreateImage(
+                cgRect, .optionOnScreenOnly,
+                kCGNullWindowID, [.bestResolution]
+            ) else { continue }
+
+            let screenImage = NSImage(cgImage: cgImage, size: screen.frame.size)
+
+            let window = KeyableWindow(
+                contentRect: screen.frame,
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false,
+                screen: screen
+            )
             window.level = .screenSaver
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.ignoresMouseEvents = false
-            window.acceptsMouseMovedEvents = true
+            window.isOpaque = true
             window.hasShadow = false
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
             let localFrame = NSRect(origin: .zero, size: screen.frame.size)
-            let view = SelectionOverlayView(frame: localFrame)
+            let view = SelectionOverlayView(
+                frame: localFrame,
+                backgroundImage: screenImage,
+                sourceCGImage: cgImage
+            )
             view.onConfirm = { [weak self] rect in
-                self?.captureArea(rect: rect, screen: screen)
+                self?.finishCapture(rect: rect, sourceImage: cgImage,
+                                    imagePointSize: screen.frame.size)
             }
             view.onCancel = { [weak self] in
                 self?.close()
@@ -39,44 +66,31 @@ class CaptureOverlay {
             windows.append(window)
         }
 
-        NSCursor.crosshair.push()
         NSApp.activate(ignoringOtherApps: true)
         windows.first?.makeKey()
+        windows.first?.makeFirstResponder(windows.first?.contentView)
     }
 
-    private func captureArea(rect: NSRect, screen: NSScreen) {
-        NSCursor.pop()
+    private func finishCapture(rect: NSRect, sourceImage: CGImage,
+                                imagePointSize: NSSize) {
+        let scaleX = CGFloat(sourceImage.width) / imagePointSize.width
+        let scaleY = CGFloat(sourceImage.height) / imagePointSize.height
 
-        let screenRect = NSRect(
-            x: screen.frame.origin.x + rect.origin.x,
-            y: screen.frame.origin.y + rect.origin.y,
-            width: rect.width,
-            height: rect.height
+        let pixelRect = CGRect(
+            x: rect.origin.x * scaleX,
+            y: (imagePointSize.height - rect.maxY) * scaleY,
+            width: rect.width * scaleX,
+            height: rect.height * scaleY
         )
 
-        for w in windows { w.orderOut(nil) }
+        close()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            guard let self else { return }
-
-            let maxY = NSScreen.screens.map { $0.frame.maxY }.max() ?? 0
-            let cgRect = CGRect(x: screenRect.origin.x,
-                                y: maxY - screenRect.maxY,
-                                width: screenRect.width,
-                                height: screenRect.height)
-
-            if let cgImage = CGWindowListCreateImage(cgRect, .optionOnScreenOnly,
-                                                      kCGNullWindowID, [.bestResolution]) {
-                let image = NSImage(cgImage: cgImage, size: screenRect.size)
-                self.onCapture(image)
-            }
-
-            self.windows.removeAll()
-        }
+        guard let cropped = sourceImage.cropping(to: pixelRect) else { return }
+        let result = NSImage(cgImage: cropped, size: rect.size)
+        onCapture(result)
     }
 
     func close() {
-        NSCursor.pop()
         for w in windows { w.orderOut(nil) }
         windows.removeAll()
     }
@@ -103,14 +117,24 @@ class SelectionOverlayView: NSView {
     var onConfirm: ((NSRect) -> Void)?
     var onCancel: (() -> Void)?
 
+    private let backgroundImage: NSImage
+    private let sourceCGImage: CGImage
     private var state: State = .idle
     private var selectionRect: NSRect = .zero
     private var mousePosition: NSPoint?
     private let handleSize: CGFloat = 8
-    private let overlayColor = NSColor.black.withAlphaComponent(0.4)
+    private let dimColor = NSColor.black.withAlphaComponent(0.4)
 
     override var acceptsFirstResponder: Bool { true }
     override var canBecomeKeyView: Bool { true }
+
+    init(frame: NSRect, backgroundImage: NSImage, sourceCGImage: CGImage) {
+        self.backgroundImage = backgroundImage
+        self.sourceCGImage = sourceCGImage
+        super.init(frame: frame)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -137,31 +161,34 @@ class SelectionOverlayView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
-        // Dimmed overlay
-        ctx.setFillColor(overlayColor.cgColor)
+        // Draw the pre-captured screenshot as background
+        backgroundImage.draw(in: bounds)
+
+        // Dim everything
+        ctx.setFillColor(dimColor.cgColor)
         ctx.fill(bounds)
 
-        // Crosshair guides (idle only)
+        // Crosshair guides in idle state
         if case .idle = state {
             drawCrosshair(ctx)
         }
 
         if selectionRect.width > 0, selectionRect.height > 0 {
-            // Clear selection area
-            ctx.setBlendMode(.clear)
-            ctx.fill(selectionRect)
-            ctx.setBlendMode(.normal)
+            // Redraw the full-brightness image in the selection area
+            ctx.saveGState()
+            ctx.clip(to: selectionRect)
+            backgroundImage.draw(in: bounds)
+            ctx.restoreGState()
 
-            // White border
+            // White border around selection
             ctx.setStrokeColor(CGColor.white)
             ctx.setLineWidth(1.5)
             ctx.stroke(selectionRect)
 
-            // Rule-of-thirds guides
+            // Rule-of-thirds
             ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.25).cgColor)
             ctx.setLineWidth(0.5)
-            let dash: [CGFloat] = [5, 5]
-            ctx.setLineDash(phase: 0, lengths: dash)
+            ctx.setLineDash(phase: 0, lengths: [5, 5])
             for i in 1...2 {
                 let x = selectionRect.minX + selectionRect.width / 3 * CGFloat(i)
                 ctx.move(to: CGPoint(x: x, y: selectionRect.minY))
@@ -173,16 +200,14 @@ class SelectionOverlayView: NSView {
             ctx.strokePath()
             ctx.setLineDash(phase: 0, lengths: [])
 
-            // Resize handles
+            // Resize handles (show when selection exists and not actively dragging a new one)
             if case .idle = state {} else if case .selecting = state {} else {
                 drawHandles(ctx)
             }
 
-            // Dimensions label
             drawDimensions(ctx)
         }
 
-        // Instruction banner
         drawInstructions(ctx)
     }
 
@@ -192,7 +217,6 @@ class SelectionOverlayView: NSView {
         ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.6).cgColor)
         ctx.setLineWidth(0.5)
         ctx.setLineDash(phase: 0, lengths: [6, 4])
-
         ctx.move(to: CGPoint(x: pos.x, y: 0))
         ctx.addLine(to: CGPoint(x: pos.x, y: bounds.height))
         ctx.move(to: CGPoint(x: 0, y: pos.y))
@@ -205,7 +229,7 @@ class SelectionOverlayView: NSView {
         let text: String
         switch state {
         case .idle, .selecting:
-            text = "Click and drag to select area  \u{2022}  Esc to cancel"
+            text = "Click and drag to select  \u{2022}  Esc or right-click to cancel"
         case .selected, .moving, .resizing:
             text = "Drag to move  \u{2022}  Drag handles to resize  \u{2022}  Enter to capture  \u{2022}  Esc to cancel"
         }
@@ -256,7 +280,6 @@ class SelectionOverlayView: NSView {
         ]
         let size = (text as NSString).size(withAttributes: attrs)
         let pad: CGFloat = 6
-
         var origin = CGPoint(x: selectionRect.midX - size.width / 2 - pad,
                              y: selectionRect.minY - size.height - pad * 2 - 4)
         if origin.y < 0 { origin.y = selectionRect.maxY + 4 }
@@ -264,7 +287,6 @@ class SelectionOverlayView: NSView {
         let bg = NSRect(x: origin.x, y: origin.y,
                         width: size.width + pad * 2,
                         height: size.height + pad * 2)
-
         ctx.setFillColor(NSColor.black.withAlphaComponent(0.7).cgColor)
         ctx.addPath(CGPath(roundedRect: bg, cornerWidth: 4, cornerHeight: 4, transform: nil))
         ctx.fillPath()
@@ -340,8 +362,7 @@ class SelectionOverlayView: NSView {
             selectionRect = rectFrom(start, pt)
 
         case .moving(let last):
-            let dx = pt.x - last.x
-            let dy = pt.y - last.y
+            let dx = pt.x - last.x, dy = pt.y - last.y
             selectionRect = selectionRect.offsetBy(dx: dx, dy: dy)
             selectionRect.origin.x = max(0, min(selectionRect.origin.x,
                                                   bounds.width - selectionRect.width))
@@ -381,6 +402,11 @@ class SelectionOverlayView: NSView {
         needsDisplay = true
     }
 
+    // Right-click always cancels
+    override func rightMouseDown(with event: NSEvent) {
+        onCancel?()
+    }
+
     // MARK: Keyboard
 
     override func keyDown(with event: NSEvent) {
@@ -389,14 +415,8 @@ class SelectionOverlayView: NSView {
             if selectionRect.width > 0, selectionRect.height > 0 {
                 onConfirm?(selectionRect)
             }
-        case 53: // Escape
-            if case .selected = state {
-                state = .idle
-                selectionRect = .zero
-                needsDisplay = true
-            } else {
-                onCancel?()
-            }
+        case 53: // Escape — always cancel, no partial reset
+            onCancel?()
         default:
             super.keyDown(with: event)
         }
