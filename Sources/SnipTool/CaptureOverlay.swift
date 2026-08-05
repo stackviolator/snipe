@@ -19,12 +19,13 @@ class CaptureOverlay {
 
     func show() {
         let screens = NSScreen.screens
-        let maxY = screens.map { $0.frame.maxY }.max() ?? 0
+        // NS coords: origin at bottom-left of primary. CG coords: origin at top-left of primary.
+        // Primary screen is always screens[0] and always has origin.y = 0.
+        let primaryMaxY = screens[0].frame.maxY
 
         for screen in screens {
-            // Pre-capture the screen BEFORE showing the overlay
             let cgRect = CGRect(x: screen.frame.origin.x,
-                                y: maxY - screen.frame.maxY,
+                                y: primaryMaxY - screen.frame.maxY,
                                 width: screen.frame.width,
                                 height: screen.frame.height)
 

@@ -15,9 +15,10 @@ class EditorWindowController: NSObject, NSWindowDelegate {
                         maxH / image.size.height, 1)
         let display = NSSize(width: image.size.width * scale,
                              height: image.size.height * scale)
-        let toolbarH: CGFloat = 52
-        let winSize = NSSize(width: max(display.width, 500),
-                             height: display.height + toolbarH)
+        let toolbarH: CGFloat = 44
+        let actionBarH: CGFloat = 48
+        let winSize = NSSize(width: max(display.width, 560),
+                             height: display.height + toolbarH + actionBarH)
 
         let screen = NSScreen.main?.visibleFrame ?? .zero
         let origin = NSPoint(x: screen.midX - winSize.width / 2,
@@ -35,9 +36,15 @@ class EditorWindowController: NSObject, NSWindowDelegate {
 
         super.init()
         window.delegate = self
-        buildUI(toolbarHeight: toolbarH)
+        buildUI(toolbarHeight: toolbarH, actionBarHeight: actionBarH)
         wireToolbar()
         installKeyHandler()
+
+        canvas.onAnnotationAdded = { [weak self] in
+            guard let self else { return }
+            self.undoHistory.append(self.canvas.annotations.map { $0 })
+            self.redoHistory.removeAll()
+        }
     }
 
     deinit {
@@ -51,13 +58,15 @@ class EditorWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - Layout
 
-    private func buildUI(toolbarHeight: CGFloat) {
+    private func buildUI(toolbarHeight: CGFloat, actionBarHeight: CGFloat) {
         let root = NSView(frame: window.contentView!.bounds)
         root.autoresizingMask = [.width, .height]
 
+        // Top toolbar (tools + color + width)
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(toolbar)
 
+        // Canvas in scroll view
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.hasVerticalScroller = true
@@ -67,18 +76,106 @@ class EditorWindowController: NSObject, NSWindowDelegate {
         scroll.backgroundColor = NSColor(white: 0.15, alpha: 1)
         root.addSubview(scroll)
 
+        // Bottom action bar
+        let actionBar = buildActionBar()
+        root.addSubview(actionBar)
+
         NSLayoutConstraint.activate([
             toolbar.topAnchor.constraint(equalTo: root.topAnchor),
             toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             toolbar.heightAnchor.constraint(equalToConstant: toolbarHeight),
+
             scroll.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            scroll.bottomAnchor.constraint(equalTo: actionBar.topAnchor),
+
+            actionBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            actionBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            actionBar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            actionBar.heightAnchor.constraint(equalToConstant: actionBarHeight),
         ])
 
         window.contentView = root
+    }
+
+    private func buildActionBar() -> NSView {
+        let bar = NSView()
+        bar.wantsLayer = true
+        bar.translatesAutoresizingMaskIntoConstraints = false
+
+        // Top border
+        let border = NSView()
+        border.wantsLayer = true
+        border.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        border.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(border)
+
+        let stack = NSStackView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        bar.addSubview(stack)
+
+        // Undo / Redo
+        let undo = NSButton(title: "Undo", target: self, action: #selector(undoAction))
+        undo.image = NSImage(systemSymbolName: "arrow.uturn.backward",
+                              accessibilityDescription: "Undo")
+        undo.imagePosition = .imageLeading
+        undo.bezelStyle = .recessed
+        undo.font = .systemFont(ofSize: 12)
+        stack.addArrangedSubview(undo)
+
+        let redo = NSButton(title: "Redo", target: self, action: #selector(redoAction))
+        redo.image = NSImage(systemSymbolName: "arrow.uturn.forward",
+                              accessibilityDescription: "Redo")
+        redo.imagePosition = .imageLeading
+        redo.bezelStyle = .recessed
+        redo.font = .systemFont(ofSize: 12)
+        stack.addArrangedSubview(redo)
+
+        // Spacer
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        stack.addArrangedSubview(spacer)
+
+        // Copy (primary action — Enter triggers it)
+        let copy = NSButton(title: "  Copy to Clipboard  ", target: self,
+                            action: #selector(copyAction))
+        copy.image = NSImage(systemSymbolName: "doc.on.doc",
+                              accessibilityDescription: "Copy")
+        copy.imagePosition = .imageLeading
+        copy.bezelStyle = .rounded
+        copy.font = .systemFont(ofSize: 13, weight: .semibold)
+        copy.keyEquivalent = "\r"
+        copy.contentTintColor = .controlAccentColor
+        stack.addArrangedSubview(copy)
+
+        // Save
+        let save = NSButton(title: "Save", target: self, action: #selector(saveAction))
+        save.image = NSImage(systemSymbolName: "square.and.arrow.down",
+                              accessibilityDescription: "Save")
+        save.imagePosition = .imageLeading
+        save.bezelStyle = .rounded
+        save.font = .systemFont(ofSize: 13)
+        stack.addArrangedSubview(save)
+
+        NSLayoutConstraint.activate([
+            border.topAnchor.constraint(equalTo: bar.topAnchor),
+            border.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            border.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+            border.heightAnchor.constraint(equalToConstant: 1),
+
+            stack.topAnchor.constraint(equalTo: bar.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+        ])
+
+        return bar
     }
 
     // MARK: - Toolbar wiring
@@ -87,16 +184,6 @@ class EditorWindowController: NSObject, NSWindowDelegate {
         toolbar.onToolChanged = { [weak self] t in self?.canvas.currentTool = t }
         toolbar.onColorChanged = { [weak self] c in self?.canvas.currentColor = c }
         toolbar.onLineWidthChanged = { [weak self] w in self?.canvas.currentLineWidth = w }
-        toolbar.onUndo = { [weak self] in self?.undo() }
-        toolbar.onRedo = { [weak self] in self?.redo() }
-        toolbar.onCopy = { [weak self] in self?.copyToClipboard() }
-        toolbar.onSave = { [weak self] in self?.saveToFile() }
-
-        canvas.onAnnotationAdded = { [weak self] in
-            guard let self else { return }
-            self.undoHistory.append(self.canvas.annotations.map { $0 })
-            self.redoHistory.removeAll()
-        }
     }
 
     // MARK: - Keyboard shortcuts
@@ -109,13 +196,13 @@ class EditorWindowController: NSObject, NSWindowDelegate {
             if event.modifierFlags.contains(.command) {
                 switch event.charactersIgnoringModifiers {
                 case "z":
-                    if event.modifierFlags.contains(.shift) { self.redo() }
-                    else { self.undo() }
+                    if event.modifierFlags.contains(.shift) { self.redoAction() }
+                    else { self.undoAction() }
                     return nil
                 case "c":
-                    self.copyToClipboard(); return nil
+                    self.copyAction(); return nil
                 case "s":
-                    self.saveToFile(); return nil
+                    self.saveAction(); return nil
                 default: break
                 }
             }
@@ -136,79 +223,48 @@ class EditorWindowController: NSObject, NSWindowDelegate {
                 }
             }
 
-            if event.keyCode == 53 { // Escape
-                self.window.close(); return nil
-            }
+            if event.keyCode == 53 { self.window.close(); return nil }
             return event
         }
     }
 
-    // MARK: - Undo / Redo
+    // MARK: - Actions
 
-    private func undo() {
+    @objc private func undoAction() {
         guard !canvas.annotations.isEmpty else { return }
         redoHistory.append(canvas.annotations.map { $0 })
         canvas.annotations = undoHistory.popLast() ?? []
         canvas.needsDisplay = true
     }
 
-    private func redo() {
+    @objc private func redoAction() {
         guard let next = redoHistory.popLast() else { return }
         undoHistory.append(canvas.annotations.map { $0 })
         canvas.annotations = next
         canvas.needsDisplay = true
     }
 
-    // MARK: - Export
-
-    private func copyToClipboard() {
+    @objc private func copyAction() {
         let image = canvas.renderFinalImage()
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([image])
-        showToast("Copied!")
+        window.close()
     }
 
-    private func saveToFile() {
+    @objc private func saveAction() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "screenshot.png"
         panel.canCreateDirectories = true
         panel.beginSheetModal(for: window) { [weak self] resp in
-            guard resp == .OK, let url = panel.url,
-                  let self else { return }
+            guard resp == .OK, let url = panel.url, let self else { return }
             let img = self.canvas.renderFinalImage()
             if let tiff = img.tiffRepresentation,
                let bmp = NSBitmapImageRep(data: tiff),
                let data = bmp.representation(using: .png, properties: [:]) {
                 try? data.write(to: url)
             }
-        }
-    }
-
-    // MARK: - Toast
-
-    private func showToast(_ msg: String) {
-        let label = NSTextField(labelWithString: msg)
-        label.font = .systemFont(ofSize: 14, weight: .medium)
-        label.textColor = .white
-        label.alignment = .center
-        label.wantsLayer = true
-        label.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.8).cgColor
-        label.layer?.cornerRadius = 6
-        label.sizeToFit()
-        label.frame.size.width += 24
-        label.frame.size.height += 12
-
-        let bounds = window.contentView!.bounds
-        label.frame.origin = CGPoint(x: bounds.midX - label.frame.width / 2,
-                                     y: bounds.midY - label.frame.height / 2)
-        window.contentView?.addSubview(label)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.3
-                label.animator().alphaValue = 0
-            }, completionHandler: { label.removeFromSuperview() })
+            self.window.close()
         }
     }
 
