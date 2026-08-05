@@ -10,7 +10,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
         registerHotKey()
+        checkPermissionOnLaunch()
     }
+
+    // MARK: - Permission
+
+    private func checkPermissionOnLaunch() {
+        if !CGPreflightScreenCaptureAccess() {
+            CGRequestScreenCaptureAccess()
+            showPermissionAlert()
+        }
+    }
+
+    private func hasScreenRecordingPermission() -> Bool {
+        CGPreflightScreenCaptureAccess()
+    }
+
+    private func showPermissionAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Screen Recording Permission Required"
+        alert.informativeText = "SnipTool needs Screen Recording permission to capture your windows.\n\nEnable it in System Settings → Privacy & Security → Screen Recording, then relaunch SnipTool."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Later")
+
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    // MARK: - Status bar
 
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -49,7 +81,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerHotKey() {
         var hotKeyID = EventHotKeyID()
-        hotKeyID.signature = 0x534E_4950 // "SNIP"
+        hotKeyID.signature = 0x534E_4950
         hotKeyID.id = 1
 
         var eventType = EventTypeSpec(
@@ -68,7 +100,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         InstallEventHandler(GetApplicationEventTarget(), handler,
                             1, &eventType, nil, &handlerRef)
 
-        // Ctrl+Shift+4 (kVK_ANSI_4 = 0x15, controlKey = 0x1000, shiftKey = 0x0200)
         RegisterEventHotKey(UInt32(kVK_ANSI_4),
                             UInt32(controlKey | shiftKey),
                             hotKeyID,
@@ -80,6 +111,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Capture actions
 
     @objc func startAreaCapture() {
+        guard hasScreenRecordingPermission() else {
+            showPermissionAlert()
+            return
+        }
         captureOverlay = CaptureOverlay { [weak self] image in
             self?.openEditor(with: image)
         }
@@ -87,6 +122,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func startFullScreenCapture() {
+        guard hasScreenRecordingPermission() else {
+            showPermissionAlert()
+            return
+        }
         guard let screen = NSScreen.main else { return }
         let cgRect = CGRect(x: 0, y: 0,
                             width: screen.frame.width,
