@@ -81,6 +81,11 @@ Snipe lives in your menu bar. Press **⌘⇧X** to capture.
 On first launch, grant **Screen Recording** permission:
 System Settings → Privacy & Security → Screen Recording → enable Snipe.
 
+> **Gatekeeper**: Snipe is ad-hoc signed (not notarized). The brew cask strips
+> the quarantine attribute automatically on install. If you installed from the
+> zip directly and macOS says it "cannot be verified", right-click Snipe.app →
+> Open, or run `xattr -dr com.apple.quarantine /Applications/Snipe.app`.
+
 ## License
 
 MIT
