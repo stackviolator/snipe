@@ -42,6 +42,7 @@ class EditorToolbar: NSView {
         ])
 
         let tools: [(ToolType, String, String)] = [
+            (.select,    "cursorarrow",       "V"),
             (.arrow,     "arrow.up.right",   "A"),
             (.rectangle, "rectangle",        "R"),
             (.ellipse,   "circle",           "E"),

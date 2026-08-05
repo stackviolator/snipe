@@ -27,7 +27,7 @@ class EditorWindowController: NSObject, NSWindowDelegate {
         window = NSWindow(contentRect: NSRect(origin: origin, size: winSize),
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
                           backing: .buffered, defer: false)
-        window.title = "SnipTool Editor"
+        window.title = "Snipe Editor"
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 400, height: 300)
 
@@ -40,7 +40,7 @@ class EditorWindowController: NSObject, NSWindowDelegate {
         wireToolbar()
         installKeyHandler()
 
-        canvas.onAnnotationAdded = { [weak self] in
+        canvas.onBeforeMutation = { [weak self] in
             guard let self else { return }
             self.undoHistory.append(self.canvas.annotations.map { $0 })
             self.redoHistory.removeAll()
@@ -210,6 +210,7 @@ class EditorWindowController: NSObject, NSWindowDelegate {
             if event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
                !(self.window.firstResponder is NSText) {
                 switch event.charactersIgnoringModifiers {
+                case "v": self.toolbar.selectTool(.select);    return nil
                 case "a": self.toolbar.selectTool(.arrow);     return nil
                 case "r": self.toolbar.selectTool(.rectangle); return nil
                 case "e": self.toolbar.selectTool(.ellipse);   return nil
@@ -221,9 +222,18 @@ class EditorWindowController: NSObject, NSWindowDelegate {
                 case "n": self.toolbar.selectTool(.counter);   return nil
                 default: break
                 }
+                // Delete / Backspace removes selected annotation
+                if event.keyCode == 51 || event.keyCode == 117 {
+                    self.canvas.deleteSelected(); return nil
+                }
             }
 
-            if event.keyCode == 53 { self.window.close(); return nil }
+            if event.keyCode == 53 {
+                if self.canvas.selectedIndex != nil {
+                    self.canvas.selectedIndex = nil; return nil
+                }
+                self.window.close(); return nil
+            }
             return event
         }
     }
@@ -231,7 +241,7 @@ class EditorWindowController: NSObject, NSWindowDelegate {
     // MARK: - Actions
 
     @objc private func undoAction() {
-        guard !canvas.annotations.isEmpty else { return }
+        guard !undoHistory.isEmpty else { return }
         redoHistory.append(canvas.annotations.map { $0 })
         canvas.annotations = undoHistory.popLast() ?? []
         canvas.needsDisplay = true

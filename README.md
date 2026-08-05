@@ -1,51 +1,49 @@
-# SnipTool
+# Snipe
 
-A fast, lightweight screenshot tool for macOS. Native Swift + AppKit.
+Fast, native screenshot tool for macOS. Capture, annotate, copy — all inline. No separate editor window. Swift + AppKit.
 
 ## Features
 
-- **Area capture** with movable, resizable selection
-- **Full screen capture**
-- **Annotation editor**: arrow, rectangle, ellipse, line, text, highlight, blur, freehand pen, numbered counters
+- **Inline capture + annotate** — select area, annotate directly on the overlay, copy
+- **Full screen capture** with editor
+- **Annotations**: arrow, rectangle, ellipse, line, text, highlight, blur, freehand pen, numbered counters
+- **Select tool**: move, resize, delete any annotation after placing it
 - **Copy to clipboard** or **save to file** (PNG)
-- **Global hotkey** — Ctrl+Shift+4
-- **Menu bar** app (no Dock icon)
-- Undo/redo, keyboard shortcuts for all tools
+- **Global hotkeys** — Cmd+Shift+X (area), Ctrl+Shift+3 (full screen)
+- **Menu bar app** — no Dock icon, always ready
 
 ## Install
 
 ### Homebrew
 
 ```bash
-brew tap stackviolator/tap
-brew install sniptool
+brew tap stackviolator/snipe
+brew install snipe
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/stackviolator/sniptool.git
-cd sniptool
-make build
-make install   # copies SnipTool.app to /Applications
+git clone https://github.com/stackviolator/snipe.git
+cd snipe
+make install
 ```
 
 ## Usage
 
-SnipTool lives in your menu bar. Click the camera icon or press **Ctrl+Shift+4** to start a capture.
+Snipe lives in your menu bar. Press **⌘⇧X** to capture.
 
-1. Click and drag to select an area
-2. Move or resize the selection with handles
-3. Press **Enter** or double-click to capture
-4. Annotate in the editor, then **⌘C** to copy or **⌘S** to save
+1. Drag to select an area — toolbar appears instantly
+2. Pick a tool and annotate
+3. Press **Enter** to copy to clipboard, or **⌘S** to save
 
 ### Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| Ctrl+Shift+4 | Start capture |
-| Enter | Confirm selection |
-| Escape | Cancel / close editor |
+| ⌘⇧X | Capture area |
+| ⌃⇧3 | Capture full screen |
+| V | Select / move tool |
 | A | Arrow |
 | R | Rectangle |
 | E | Ellipse |
@@ -55,15 +53,17 @@ SnipTool lives in your menu bar. Click the camera icon or press **Ctrl+Shift+4**
 | B | Blur |
 | P | Pen |
 | N | Counter |
+| Enter | Copy & close |
+| ⌘S | Save to file |
 | ⌘Z | Undo |
 | ⌘⇧Z | Redo |
-| ⌘C | Copy to clipboard |
-| ⌘S | Save to file |
+| Delete | Remove selected annotation |
+| Escape | Cancel / deselect |
 
 ## Permissions
 
-Grant **Screen Recording** on first launch:
-System Settings → Privacy & Security → Screen Recording → enable SnipTool.
+On first launch, grant **Screen Recording** permission:
+System Settings → Privacy & Security → Screen Recording → enable Snipe.
 
 ## License
 

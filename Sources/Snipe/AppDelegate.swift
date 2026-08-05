@@ -5,41 +5,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var captureOverlay: CaptureOverlay?
     var editorController: EditorWindowController?
-    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyRef1: EventHotKeyRef?
+    private var hotKeyRef2: EventHotKeyRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
-        registerHotKey()
-        checkPermissionOnLaunch()
-    }
-
-    // MARK: - Permission
-
-    private func checkPermissionOnLaunch() {
-        if !CGPreflightScreenCaptureAccess() {
-            CGRequestScreenCaptureAccess()
-            showPermissionAlert()
-        }
-    }
-
-    private func hasScreenRecordingPermission() -> Bool {
-        CGPreflightScreenCaptureAccess()
-    }
-
-    private func showPermissionAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Screen Recording Permission Required"
-        alert.informativeText = "SnipTool needs Screen Recording permission to capture your windows.\n\nEnable it in System Settings → Privacy & Security → Screen Recording, then relaunch SnipTool."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Later")
-
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
-            }
-        }
+        registerHotKeys()
     }
 
     // MARK: - Status bar
@@ -48,19 +19,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "camera.viewfinder",
-                                   accessibilityDescription: "SnipTool")
+                                   accessibilityDescription: "Snipe")
             button.image?.isTemplate = true
         }
 
         let menu = NSMenu()
 
-        let captureItem = NSMenuItem(title: "Capture Area",
+        let captureItem = NSMenuItem(title: "Capture Area  (⌘⇧X)",
                                      action: #selector(startAreaCapture),
                                      keyEquivalent: "")
         captureItem.target = self
         menu.addItem(captureItem)
 
-        let fullItem = NSMenuItem(title: "Capture Full Screen",
+        let fullItem = NSMenuItem(title: "Capture Full Screen  (⌃⇧3)",
                                   action: #selector(startFullScreenCapture),
                                   keyEquivalent: "")
         fullItem.target = self
@@ -68,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(title: "Quit SnipTool",
+        let quitItem = NSMenuItem(title: "Quit Snipe",
                                   action: #selector(quit),
                                   keyEquivalent: "q")
         quitItem.target = self
@@ -77,21 +48,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    // MARK: - Global hot key (Ctrl+Shift+4)
+    // MARK: - Global hot keys
 
-    private func registerHotKey() {
-        var hotKeyID = EventHotKeyID()
-        hotKeyID.signature = 0x534E_4950
-        hotKeyID.id = 1
-
+    private func registerHotKeys() {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
 
-        let handler: EventHandlerUPP = { _, _, _ in
+        let handler: EventHandlerUPP = { _, event, _ in
+            guard let event else { return noErr }
+            var hkID = EventHotKeyID()
+            GetEventParameter(event,
+                              EventParamName(kEventParamDirectObject),
+                              EventParamType(typeEventHotKeyID),
+                              nil, MemoryLayout<EventHotKeyID>.size, nil, &hkID)
             DispatchQueue.main.async {
-                (NSApp.delegate as? AppDelegate)?.startAreaCapture()
+                let ad = NSApp.delegate as? AppDelegate
+                switch hkID.id {
+                case 1: ad?.startAreaCapture()
+                case 2: ad?.startFullScreenCapture()
+                default: break
+                }
             }
             return noErr
         }
@@ -100,34 +78,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         InstallEventHandler(GetApplicationEventTarget(), handler,
                             1, &eventType, nil, &handlerRef)
 
-        RegisterEventHotKey(UInt32(kVK_ANSI_4),
-                            UInt32(controlKey | shiftKey),
-                            hotKeyID,
-                            GetApplicationEventTarget(),
-                            0,
-                            &hotKeyRef)
+        // Cmd+Shift+X — area capture (flameshot style)
+        let hk1 = EventHotKeyID(signature: 0x534E_4950, id: 1)
+        RegisterEventHotKey(UInt32(kVK_ANSI_X), UInt32(cmdKey | shiftKey),
+                            hk1, GetApplicationEventTarget(), 0, &hotKeyRef1)
+
+        // Ctrl+Shift+3 — full screen capture
+        let hk2 = EventHotKeyID(signature: 0x534E_4950, id: 2)
+        RegisterEventHotKey(UInt32(kVK_ANSI_3), UInt32(controlKey | shiftKey),
+                            hk2, GetApplicationEventTarget(), 0, &hotKeyRef2)
     }
 
     // MARK: - Capture actions
 
     @objc func startAreaCapture() {
-        guard hasScreenRecordingPermission() else {
-            showPermissionAlert()
-            return
-        }
-        captureOverlay = CaptureOverlay { [weak self] image in
-            self?.openEditor(with: image)
-        }
+        captureOverlay = CaptureOverlay()
+        captureOverlay?.onDismiss = { [weak self] in self?.captureOverlay = nil }
         captureOverlay?.show()
     }
 
-    @objc private func startFullScreenCapture() {
-        guard hasScreenRecordingPermission() else {
-            showPermissionAlert()
-            return
-        }
+    @objc func startFullScreenCapture() {
         guard let screen = NSScreen.main else { return }
-        let cgRect = CGRect(x: 0, y: 0,
+        let primaryMaxY = NSScreen.screens[0].frame.maxY
+        let cgRect = CGRect(x: screen.frame.origin.x,
+                            y: primaryMaxY - screen.frame.maxY,
                             width: screen.frame.width,
                             height: screen.frame.height)
 

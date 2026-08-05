@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "sniptool",
+    name: "snipe",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "sniptool",
-            path: "Sources/SnipTool",
+            name: "snipe",
+            path: "Sources/Snipe",
             linkerSettings: [
                 .linkedFramework("Carbon"),
             ]
