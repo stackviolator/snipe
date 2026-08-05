@@ -15,12 +15,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Status bar
 
+    private func makeMenuBarIcon() -> NSImage {
+        let s: CGFloat = 18
+        let img = NSImage(size: NSSize(width: s, height: s))
+        img.lockFocus()
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            let cx = s / 2, cy = s / 2
+            let r: CGFloat = 6.0
+            let gap: CGFloat = 1.8
+            let arm: CGFloat = 8.2
+            let lw: CGFloat = 1.3
+
+            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.setLineWidth(lw)
+            ctx.setLineCap(.round)
+
+            ctx.strokeEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
+
+            for (dx, dy) in [(0,1),(0,-1),(1,0),(-1,0)] as [(CGFloat, CGFloat)] {
+                ctx.move(to: CGPoint(x: cx + dx * gap, y: cy + dy * gap))
+                ctx.addLine(to: CGPoint(x: cx + dx * arm, y: cy + dy * arm))
+            }
+            ctx.strokePath()
+
+            let dot: CGFloat = 1.2
+            ctx.setFillColor(NSColor.black.cgColor)
+            ctx.fillEllipse(in: CGRect(x: cx - dot, y: cy - dot, width: dot * 2, height: dot * 2))
+        }
+        img.unlockFocus()
+        img.isTemplate = true
+        return img
+    }
+
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "camera.viewfinder",
-                                   accessibilityDescription: "Snipe")
-            button.image?.isTemplate = true
+            button.image = makeMenuBarIcon()
         }
 
         let menu = NSMenu()
