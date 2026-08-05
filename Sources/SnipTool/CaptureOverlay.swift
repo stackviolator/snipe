@@ -26,8 +26,7 @@ class CaptureOverlay {
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-            let localFrame = NSRect(origin: .zero,
-                                    size: screen.frame.size)
+            let localFrame = NSRect(origin: .zero, size: screen.frame.size)
             let view = SelectionOverlayView(frame: localFrame)
             view.onConfirm = { [weak self] rect in
                 self?.captureArea(rect: rect, screen: screen)
@@ -106,6 +105,7 @@ class SelectionOverlayView: NSView {
 
     private var state: State = .idle
     private var selectionRect: NSRect = .zero
+    private var mousePosition: NSPoint?
     private let handleSize: CGFloat = 8
     private let overlayColor = NSColor.black.withAlphaComponent(0.4)
 
@@ -117,46 +117,124 @@ class SelectionOverlayView: NSView {
         window?.makeFirstResponder(self)
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited],
+            owner: self
+        ))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        mousePosition = convert(event.locationInWindow, from: nil)
+        needsDisplay = true
+    }
+
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
+        // Dimmed overlay
         ctx.setFillColor(overlayColor.cgColor)
         ctx.fill(bounds)
 
-        guard selectionRect.width > 0, selectionRect.height > 0 else { return }
+        // Crosshair guides (idle only)
+        if case .idle = state {
+            drawCrosshair(ctx)
+        }
 
-        ctx.setBlendMode(.clear)
-        ctx.fill(selectionRect)
-        ctx.setBlendMode(.normal)
+        if selectionRect.width > 0, selectionRect.height > 0 {
+            // Clear selection area
+            ctx.setBlendMode(.clear)
+            ctx.fill(selectionRect)
+            ctx.setBlendMode(.normal)
 
-        // Border
-        ctx.setStrokeColor(CGColor.white)
-        ctx.setLineWidth(1.5)
-        ctx.stroke(selectionRect)
+            // White border
+            ctx.setStrokeColor(CGColor.white)
+            ctx.setLineWidth(1.5)
+            ctx.stroke(selectionRect)
 
-        // Rule-of-thirds guides
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.25).cgColor)
+            // Rule-of-thirds guides
+            ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.25).cgColor)
+            ctx.setLineWidth(0.5)
+            let dash: [CGFloat] = [5, 5]
+            ctx.setLineDash(phase: 0, lengths: dash)
+            for i in 1...2 {
+                let x = selectionRect.minX + selectionRect.width / 3 * CGFloat(i)
+                ctx.move(to: CGPoint(x: x, y: selectionRect.minY))
+                ctx.addLine(to: CGPoint(x: x, y: selectionRect.maxY))
+                let y = selectionRect.minY + selectionRect.height / 3 * CGFloat(i)
+                ctx.move(to: CGPoint(x: selectionRect.minX, y: y))
+                ctx.addLine(to: CGPoint(x: selectionRect.maxX, y: y))
+            }
+            ctx.strokePath()
+            ctx.setLineDash(phase: 0, lengths: [])
+
+            // Resize handles
+            if case .idle = state {} else if case .selecting = state {} else {
+                drawHandles(ctx)
+            }
+
+            // Dimensions label
+            drawDimensions(ctx)
+        }
+
+        // Instruction banner
+        drawInstructions(ctx)
+    }
+
+    private func drawCrosshair(_ ctx: CGContext) {
+        guard let pos = mousePosition else { return }
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.6).cgColor)
         ctx.setLineWidth(0.5)
-        let dash: [CGFloat] = [5, 5]
-        ctx.setLineDash(phase: 0, lengths: dash)
-        for i in 1...2 {
-            let x = selectionRect.minX + selectionRect.width / 3 * CGFloat(i)
-            ctx.move(to: CGPoint(x: x, y: selectionRect.minY))
-            ctx.addLine(to: CGPoint(x: x, y: selectionRect.maxY))
-            let y = selectionRect.minY + selectionRect.height / 3 * CGFloat(i)
-            ctx.move(to: CGPoint(x: selectionRect.minX, y: y))
-            ctx.addLine(to: CGPoint(x: selectionRect.maxX, y: y))
-        }
+        ctx.setLineDash(phase: 0, lengths: [6, 4])
+
+        ctx.move(to: CGPoint(x: pos.x, y: 0))
+        ctx.addLine(to: CGPoint(x: pos.x, y: bounds.height))
+        ctx.move(to: CGPoint(x: 0, y: pos.y))
+        ctx.addLine(to: CGPoint(x: bounds.width, y: pos.y))
         ctx.strokePath()
-        ctx.setLineDash(phase: 0, lengths: [])
+        ctx.restoreGState()
+    }
 
-        if case .idle = state {} else if case .selecting = state {} else {
-            drawHandles(ctx)
+    private func drawInstructions(_ ctx: CGContext) {
+        let text: String
+        switch state {
+        case .idle, .selecting:
+            text = "Click and drag to select area  \u{2022}  Esc to cancel"
+        case .selected, .moving, .resizing:
+            text = "Drag to move  \u{2022}  Drag handles to resize  \u{2022}  Enter to capture  \u{2022}  Esc to cancel"
         }
 
-        drawDimensions(ctx)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let size = (text as NSString).size(withAttributes: attrs)
+        let pad: CGFloat = 12
+        let bgRect = NSRect(
+            x: bounds.midX - size.width / 2 - pad,
+            y: bounds.maxY - size.height - pad * 2 - 24,
+            width: size.width + pad * 2,
+            height: size.height + pad * 2
+        )
+
+        ctx.saveGState()
+        ctx.setFillColor(NSColor.black.withAlphaComponent(0.75).cgColor)
+        ctx.addPath(CGPath(roundedRect: bgRect, cornerWidth: 8, cornerHeight: 8, transform: nil))
+        ctx.fillPath()
+        ctx.restoreGState()
+
+        let nsCtx = NSGraphicsContext(cgContext: ctx, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsCtx
+        (text as NSString).draw(at: CGPoint(x: bgRect.minX + pad, y: bgRect.minY + pad),
+                                withAttributes: attrs)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func drawHandles(_ ctx: CGContext) {

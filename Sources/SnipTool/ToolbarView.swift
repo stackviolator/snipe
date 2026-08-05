@@ -30,15 +30,13 @@ class EditorToolbar: NSView {
         updateButtonStates()
     }
 
-    // MARK: Setup
-
     private func setupUI() {
         let stack = NSStackView()
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 2
-        stack.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        stack.spacing = 4
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
         addSubview(stack)
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: topAnchor),
@@ -47,19 +45,20 @@ class EditorToolbar: NSView {
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
+        // -- Tool buttons --
         let tools: [(ToolType, String, String)] = [
-            (.arrow,     "arrow.up.right",    "A"),
-            (.rectangle, "rectangle",         "R"),
-            (.ellipse,   "circle",            "E"),
-            (.line,      "line.diagonal",     "L"),
-            (.text,      "textformat",        "T"),
-            (.highlight, "highlighter",       "H"),
-            (.blur,      "rectangle.dashed",  "B"),
-            (.pen,       "pencil.tip",        "P"),
-            (.counter,   "number",            "N"),
+            (.arrow,     "arrow.up.right",   "A"),
+            (.rectangle, "rectangle",        "R"),
+            (.ellipse,   "circle",           "E"),
+            (.line,      "line.diagonal",    "L"),
+            (.text,      "textformat",       "T"),
+            (.highlight, "highlighter",      "H"),
+            (.blur,      "rectangle.dashed", "B"),
+            (.pen,       "pencil.tip",       "P"),
+            (.counter,   "number",           "N"),
         ]
         for (tool, symbol, key) in tools {
-            let btn = makeButton(symbol: symbol, tip: "\(tool.rawValue) (\(key))")
+            let btn = iconButton(symbol: symbol, tip: "\(tool.rawValue) (\(key))")
             btn.target = self
             btn.action = #selector(toolClicked(_:))
             toolButtons.append((tool, btn))
@@ -68,43 +67,42 @@ class EditorToolbar: NSView {
 
         stack.addArrangedSubview(separator())
 
-        // Color
-        let cw = NSColorWell(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
+        // -- Color well --
+        let cw = NSColorWell(frame: .zero)
         cw.color = .systemRed
         cw.target = self
         cw.action = #selector(colorPicked(_:))
         cw.translatesAutoresizingMaskIntoConstraints = false
-        cw.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        cw.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        cw.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        cw.heightAnchor.constraint(equalToConstant: 32).isActive = true
         stack.addArrangedSubview(cw)
 
-        // Width
+        // -- Width slider --
         let slider = NSSlider(value: 3, minValue: 1, maxValue: 12,
                               target: self, action: #selector(widthChanged(_:)))
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.widthAnchor.constraint(equalToConstant: 80).isActive = true
-        slider.controlSize = .small
         stack.addArrangedSubview(slider)
 
         stack.addArrangedSubview(separator())
 
-        // Undo / Redo
-        let undo = makeButton(symbol: "arrow.uturn.backward", tip: "Undo (\u{2318}Z)")
+        // -- Undo / Redo --
+        let undo = labeledButton(symbol: "arrow.uturn.backward", title: "Undo")
         undo.target = self; undo.action = #selector(undoClicked)
         stack.addArrangedSubview(undo)
 
-        let redo = makeButton(symbol: "arrow.uturn.forward", tip: "Redo (\u{2318}\u{21e7}Z)")
+        let redo = labeledButton(symbol: "arrow.uturn.forward", title: "Redo")
         redo.target = self; redo.action = #selector(redoClicked)
         stack.addArrangedSubview(redo)
 
         stack.addArrangedSubview(separator())
 
-        // Copy / Save
-        let copy = makeButton(symbol: "doc.on.doc", tip: "Copy (\u{2318}C)")
+        // -- Copy / Save (prominent) --
+        let copy = accentButton(title: "Copy", symbol: "doc.on.doc")
         copy.target = self; copy.action = #selector(copyClicked)
         stack.addArrangedSubview(copy)
 
-        let save = makeButton(symbol: "square.and.arrow.down", tip: "Save (\u{2318}S)")
+        let save = accentButton(title: "Save", symbol: "square.and.arrow.down")
         save.target = self; save.action = #selector(saveClicked)
         stack.addArrangedSubview(save)
 
@@ -113,13 +111,26 @@ class EditorToolbar: NSView {
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         stack.addArrangedSubview(spacer)
 
+        // -- Bottom border --
+        let border = NSView()
+        border.wantsLayer = true
+        border.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        border.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(border)
+        NSLayoutConstraint.activate([
+            border.leadingAnchor.constraint(equalTo: leadingAnchor),
+            border.trailingAnchor.constraint(equalTo: trailingAnchor),
+            border.bottomAnchor.constraint(equalTo: bottomAnchor),
+            border.heightAnchor.constraint(equalToConstant: 1),
+        ])
+
         updateButtonStates()
     }
 
-    // MARK: Factories
+    // MARK: Button factories
 
-    private func makeButton(symbol: String, tip: String) -> NSButton {
-        let b = NSButton(frame: NSRect(x: 0, y: 0, width: 32, height: 28))
+    private func iconButton(symbol: String, tip: String) -> NSButton {
+        let b = NSButton(frame: .zero)
         b.bezelStyle = .recessed
         b.setButtonType(.pushOnPushOff)
         b.isBordered = true
@@ -127,8 +138,35 @@ class EditorToolbar: NSView {
         b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
         b.imagePosition = .imageOnly
         b.translatesAutoresizingMaskIntoConstraints = false
-        b.widthAnchor.constraint(equalToConstant: 32).isActive = true
-        b.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        b.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        b.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        return b
+    }
+
+    private func labeledButton(symbol: String, title: String) -> NSButton {
+        let b = NSButton(frame: .zero)
+        b.bezelStyle = .recessed
+        b.isBordered = true
+        b.title = title
+        b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        b.imagePosition = .imageLeading
+        b.font = .systemFont(ofSize: 12)
+        b.translatesAutoresizingMaskIntoConstraints = false
+        b.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        return b
+    }
+
+    private func accentButton(title: String, symbol: String) -> NSButton {
+        let b = NSButton(frame: .zero)
+        b.bezelStyle = .rounded
+        b.isBordered = true
+        b.title = title
+        b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        b.imagePosition = .imageLeading
+        b.font = .systemFont(ofSize: 13, weight: .medium)
+        b.translatesAutoresizingMaskIntoConstraints = false
+        b.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        b.contentTintColor = .controlAccentColor
         return b
     }
 
@@ -138,7 +176,7 @@ class EditorToolbar: NSView {
         v.layer?.backgroundColor = NSColor.separatorColor.cgColor
         v.translatesAutoresizingMaskIntoConstraints = false
         v.widthAnchor.constraint(equalToConstant: 1).isActive = true
-        v.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        v.heightAnchor.constraint(equalToConstant: 28).isActive = true
         return v
     }
 
@@ -159,16 +197,10 @@ class EditorToolbar: NSView {
         }
     }
 
-    @objc private func colorPicked(_ sender: NSColorWell) {
-        onColorChanged?(sender.color)
-    }
-
-    @objc private func widthChanged(_ sender: NSSlider) {
-        onLineWidthChanged?(CGFloat(sender.doubleValue))
-    }
-
+    @objc private func colorPicked(_ sender: NSColorWell) { onColorChanged?(sender.color) }
+    @objc private func widthChanged(_ sender: NSSlider)   { onLineWidthChanged?(CGFloat(sender.doubleValue)) }
     @objc private func undoClicked()  { onUndo?() }
-    @objc private func redoClicked() { onRedo?() }
-    @objc private func copyClicked() { onCopy?() }
-    @objc private func saveClicked() { onSave?() }
+    @objc private func redoClicked()  { onRedo?() }
+    @objc private func copyClicked()  { onCopy?() }
+    @objc private func saveClicked()  { onSave?() }
 }

@@ -15,7 +15,7 @@ class EditorWindowController: NSObject, NSWindowDelegate {
                         maxH / image.size.height, 1)
         let display = NSSize(width: image.size.width * scale,
                              height: image.size.height * scale)
-        let toolbarH: CGFloat = 44
+        let toolbarH: CGFloat = 52
         let winSize = NSSize(width: max(display.width, 500),
                              height: display.height + toolbarH)
 
@@ -120,7 +120,8 @@ class EditorWindowController: NSObject, NSWindowDelegate {
                 }
             }
 
-            if event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+            if event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+               !(self.window.firstResponder is NSText) {
                 switch event.charactersIgnoringModifiers {
                 case "a": self.toolbar.selectTool(.arrow);     return nil
                 case "r": self.toolbar.selectTool(.rectangle); return nil
