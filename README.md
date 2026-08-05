@@ -23,6 +23,8 @@ brew tap stackviolator/snipe https://github.com/stackviolator/snipe.git
 brew install --cask snipe
 ```
 
+> On Homebrew 6+, the first install may ask to trust the tap:
+> `brew trust stackviolator/snipe`
 > The shorthand `brew tap stackviolator/snipe` also works and pulls the same
 > cask from the legacy `homebrew-snipe` tap repo.
 
