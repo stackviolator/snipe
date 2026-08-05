@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# CLI launcher for Snipe. Captures the screen area immediately.
+# Usage: snipe            (open app and start capture)
+#        snipe --editor   (also accepted; capture is the default action)
+set -euo pipefail
+open -a /Applications/Snipe.app --args --capture

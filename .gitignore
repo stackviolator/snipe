@@ -1,0 +1,5 @@
+.build/
+dist/
+AppIcon.iconset/
+.DS_Store
+*.zip
